@@ -2,8 +2,8 @@ const mongoose = require("mongoose");
 
 const reviewSchema = new mongoose.Schema(
   {
-    user: { type: String, required: true },
-    rating: { type: Number, min: 1, max: 5 },
+    user: String,
+    rating: Number,
     comment: String,
     images: [String],
     videos: [String],
@@ -16,22 +16,24 @@ const productSchema = new mongoose.Schema(
     id: { type: String, required: true, unique: true },
 
     title: { type: String, required: true },
-
     description: { type: String, required: true },
 
+    // 🔥 MULTIPLE IMAGES
     images: { type: [String], required: true },
+
+    // 🔥 COLOR-WISE IMAGES
+    colorImages: [
+      {
+        color: { type: String, required: true },
+        images: { type: [String], required: true },
+      },
+    ],
 
     oldPrice: Number,
     price: { type: Number, required: true },
-
     quantity: { type: Number, default: 1 },
 
-    sizes: {
-      type: [String],
-      enum: [],
-      required: true,
-    },
-
+    sizes: { type: [String], required: true },
     colors: { type: [String], required: true },
 
     category: {
@@ -47,11 +49,7 @@ const productSchema = new mongoose.Schema(
     },
 
     inStock: { type: Boolean, default: true },
-
-    OnSale: { type: Boolean, default: false },
-
-    rating: { type: Number, min: 0, max: 5, default: 0 },
-
+    rating: { type: Number, default: 0 },
     reviews: [reviewSchema],
   },
   { timestamps: true }

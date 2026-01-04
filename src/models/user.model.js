@@ -4,20 +4,37 @@ const userSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: true,
     },
+
     email: {
+      type: String,
+      lowercase: true,
+      default: undefined, // 🔥 THIS IS IMPORTANT
+    },
+
+    phone: {
       type: String,
       required: true,
       unique: true,
     },
-    password: {
-      type: String,
-      required: true,
-    },
+
     role: {
       type: String,
+      enum: ["ADMIN", "CUSTOMER"],
       default: "CUSTOMER",
+    },
+
+    otp: {
+      type: String,
+    },
+
+    otpExpiry: {
+      type: Date,
+    },
+
+    isVerified: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true }

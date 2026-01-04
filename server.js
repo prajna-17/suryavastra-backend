@@ -7,6 +7,7 @@ const app = express();
 const connectDB = require("./src/config/db");
 const { uploadRouter } = require("./uploadthing");
 const { createRouteHandler } = require("uploadthing/express");
+const adminRoutes = require("./src/routes/admin.routes");
 
 // middlewares
 app.use(cors());
@@ -36,6 +37,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/admin", adminRoutes);
 
 // start server
 const PORT = process.env.PORT || 5000;
