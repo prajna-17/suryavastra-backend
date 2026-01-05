@@ -32,12 +32,14 @@ const authRoutes = require("./src/routes/auth.routes");
 const productRoutes = require("./src/routes/product.routes");
 const categoryRoutes = require("./src/routes/category.routes");
 const orderRoutes = require("./src/routes/order.routes");
+const paymentRoutes = require("./src/routes/payment.routes");
 
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/payment", paymentRoutes);
 
 // start server
 const PORT = process.env.PORT || 5000;

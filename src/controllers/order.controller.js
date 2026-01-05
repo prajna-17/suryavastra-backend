@@ -73,6 +73,77 @@ const createOrder = async (req, res) => {
   }
 };
 
+// CREATE PENDING ORDER (for ONLINE PAYMENT)
+const createPendingOrder = async (req, res) => {
+  console.log("REQ BODY 👉", req.body);
+  console.log("AUTH USER 👉", req.user?._id);
+
+  try {
+    const { products, shippingAddress } = req.body;
+    const customerId = req.user.userId;
+
+    if (!products || products.length === 0) {
+      return res.status(400).json({
+        message: "Order must contain at least one product",
+      });
+    }
+
+    let orderItems = [];
+    let totalAmount = 0;
+
+    for (const item of products) {
+      const dbProduct = await Product.findById(item.product);
+
+      if (!dbProduct) {
+        return res.status(400).json({
+          message: `Invalid product ID: ${item.product}`,
+        });
+      }
+
+      const subtotal = dbProduct.price * item.quantity;
+      totalAmount += subtotal;
+
+      orderItems.push({
+        product: dbProduct._id,
+        title: dbProduct.title,
+        images: dbProduct.images,
+        category: dbProduct.category,
+        price: dbProduct.price,
+        quantity: item.quantity,
+        subtotal,
+      });
+    }
+
+    const merchantTransactionId = "TXN_" + Date.now();
+
+    const newOrder = new Order({
+      user: customerId,
+      products: orderItems,
+      shippingAddress,
+      totalAmount,
+      paymentStatus: "PENDING",
+      isCompleted: false,
+      merchantTransactionId,
+    });
+
+    await newOrder.save();
+
+    res.status(201).json(
+      createResponse(
+        201,
+        {
+          orderId: newOrder._id,
+          amount: totalAmount,
+          merchantTransactionId,
+        },
+        "Pending order created"
+      )
+    );
+  } catch (error) {
+    res.status(500).json(ErrorResponse(500, error.message));
+  }
+};
+
 // FETCH ALL ORDERS (Admin)
 const fetchAllOrders = async (req, res) => {
   try {
@@ -152,6 +223,7 @@ const orderCompleted = async (req, res) => {
 
 module.exports = {
   createOrder,
+  createPendingOrder,
   fetchAllOrders,
   fetchOrderDetails,
   fetchUserAllOrders,

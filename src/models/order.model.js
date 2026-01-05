@@ -72,6 +72,16 @@ const orderSchema = new mongoose.Schema(
       required: true,
     },
 
+    merchantTransactionId: {
+      type: String,
+    },
+
+    paymentStatus: {
+      type: String,
+      enum: ["PENDING", "PAID", "FAILED"],
+      default: "PENDING",
+    },
+
     isCompleted: {
       type: Boolean,
       default: false,

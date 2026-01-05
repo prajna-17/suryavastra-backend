@@ -3,6 +3,7 @@ const { requireAuth, requireAdmin } = require("../middlewares/auth.middleware");
 
 const {
   createOrder,
+  createPendingOrder,
   fetchAllOrders,
   fetchOrderDetails,
   fetchUserAllOrders,
@@ -14,6 +15,8 @@ const router = express.Router();
 // CUSTOMER
 router.post("/", requireAuth, createOrder);
 router.get("/:userId", requireAuth, fetchUserAllOrders);
+
+router.post("/create-pending", requireAuth, createPendingOrder);
 
 // ADMIN
 router.get("/", requireAuth, requireAdmin, fetchAllOrders);
