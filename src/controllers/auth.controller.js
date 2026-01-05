@@ -44,18 +44,16 @@ const login = async (req, res) => {
 
 const sendOtp = async (req, res) => {
   try {
-    let { phone } = req.body; // phone = email now
+    let { email } = req.body;
 
-    if (!phone) {
+    if (!email) {
       return res.status(400).json(ErrorResponse(400, "Email is required"));
     }
 
-    phone = phone.toLowerCase().trim();
-
-    let user = await User.findOne({ phone });
-
+    email = email.toLowerCase().trim();
+    let user = await User.findOne({ email });
     if (!user) {
-      user = new User({ phone });
+      user = new User({ email });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -69,7 +67,7 @@ const sendOtp = async (req, res) => {
     user.otp = otp;
     user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
     await user.save();
-    await sendOtpEmail(phone, otp);
+    await sendOtpEmail(email, otp);
 
     return res
       .status(200)
@@ -82,16 +80,16 @@ const sendOtp = async (req, res) => {
 
 const verifyOtp = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
+    const { email, otp } = req.body;
 
-    if (!phone || !otp) {
+    if (!email || !otp) {
       return res.status(400).json({
         status: "error",
-        message: "Phone and OTP are required",
+        message: "Email and OTP are required",
       });
     }
 
-    const user = await User.findOne({ phone });
+    const user = await User.findOne({ email });
 
     if (!user) {
       return res.status(404).json({

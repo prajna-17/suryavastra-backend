@@ -8,14 +8,10 @@ const userSchema = new mongoose.Schema(
 
     email: {
       type: String,
-      lowercase: true,
-      default: undefined, // 🔥 THIS IS IMPORTANT
-    },
-
-    phone: {
-      type: String,
       required: true,
       unique: true,
+      lowercase: true,
+      trim: true,
     },
 
     role: {
