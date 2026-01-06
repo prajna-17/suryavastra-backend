@@ -4,6 +4,7 @@ const { requireAuth, requireAdmin } = require("../middlewares/auth.middleware");
 const {
   createOrder,
   createPendingOrder,
+  createCODOrder,
   fetchAllOrders,
   fetchOrderDetails,
   fetchUserAllOrders,
@@ -17,6 +18,7 @@ router.post("/", requireAuth, createOrder);
 router.get("/:userId", requireAuth, fetchUserAllOrders);
 
 router.post("/create-pending", requireAuth, createPendingOrder);
+router.post("/create-cod", requireAuth, createCODOrder);
 
 // ADMIN
 router.get("/", requireAuth, requireAdmin, fetchAllOrders);

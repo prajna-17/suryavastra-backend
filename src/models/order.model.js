@@ -86,6 +86,17 @@ const orderSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    paymentMethod: {
+      type: String,
+      enum: ["ONLINE", "COD"],
+      default: "ONLINE",
+    },
+
+    orderStatus: {
+      type: String,
+      enum: ["PLACED", "CONFIRMED", "SHIPPED", "DELIVERED"],
+      default: "PLACED",
+    },
   },
   { timestamps: true }
 );

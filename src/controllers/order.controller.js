@@ -221,6 +221,66 @@ const orderCompleted = async (req, res) => {
   }
 };
 
+// CREATE COD ORDER
+const createCODOrder = async (req, res) => {
+  try {
+    const { products, shippingAddress } = req.body;
+    const customerId = req.user.userId;
+
+    if (!products || products.length === 0) {
+      return res
+        .status(400)
+        .json(ErrorResponse(400, "Order must contain at least one product"));
+    }
+
+    let orderItems = [];
+    let totalAmount = 0;
+
+    for (const item of products) {
+      const dbProduct = await Product.findById(item.product);
+
+      if (!dbProduct) {
+        return res
+          .status(400)
+          .json(ErrorResponse(400, `Invalid product ID: ${item.product}`));
+      }
+
+      const subtotal = dbProduct.price * item.quantity;
+      totalAmount += subtotal;
+
+      orderItems.push({
+        product: dbProduct._id,
+        title: dbProduct.title,
+        images: dbProduct.images,
+        category: dbProduct.category,
+        price: dbProduct.price,
+        quantity: item.quantity,
+        subtotal,
+      });
+    }
+
+    const newOrder = new Order({
+      user: customerId,
+      products: orderItems,
+      shippingAddress,
+      totalAmount,
+
+      paymentMethod: "COD",
+      paymentStatus: "PENDING",
+      orderStatus: "PLACED",
+      isCompleted: false,
+    });
+
+    await newOrder.save();
+
+    return res
+      .status(201)
+      .json(createResponse(201, { orderId: newOrder._id }, "COD order placed"));
+  } catch (error) {
+    return res.status(500).json(ErrorResponse(500, error.message));
+  }
+};
+
 module.exports = {
   createOrder,
   createPendingOrder,
@@ -228,4 +288,5 @@ module.exports = {
   fetchOrderDetails,
   fetchUserAllOrders,
   orderCompleted,
+  createCODOrder,
 };
