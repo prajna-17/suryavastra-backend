@@ -31,7 +31,7 @@ const createCategory = async (req, res) => {
 const getCategories = async (req, res) => {
   try {
     const categories = await Category.find();
-    res.json(categories);
+    res.json({ data: categories });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
