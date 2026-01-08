@@ -12,13 +12,9 @@ const adminRoutes = require("./src/routes/admin.routes");
 // middlewares
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "https://suryavastra.vercel.app",
-      "https://suryavastra-h1ggs5k63-prajna-nayaks-projects.vercel.app",
-    ],
+    origin: true,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
@@ -29,6 +25,10 @@ app.use(
     router: uploadRouter,
   })
 );
+
+// 🔥 Explicitly handle preflight requests
+app.options("*", cors());
+
 app.use(express.json());
 
 // connect db
