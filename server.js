@@ -10,11 +10,18 @@ const { createRouteHandler } = require("uploadthing/express");
 const adminRoutes = require("./src/routes/admin.routes");
 
 // middlewares
-app.use(cors());
-app.use(express.json());
-
-// connect db
-connectDB();
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "https://suryavastra.vercel.app",
+      "https://suryavastra-h1ggs5k63-prajna-nayaks-projects.vercel.app",
+    ],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 app.use(
   "/api/uploadthing",
@@ -22,6 +29,10 @@ app.use(
     router: uploadRouter,
   })
 );
+app.use(express.json());
+
+// connect db
+connectDB();
 
 // routes
 app.get("/", (req, res) => {

@@ -199,13 +199,18 @@ const fetchOrderDetails = async (req, res) => {
 };
 
 // COMPLETE ORDER
+// COMPLETE ORDER
 const orderCompleted = async (req, res) => {
   try {
     const { orderId } = req.params;
+    const { orderStatus } = req.body;
 
     const updatedOrder = await Order.findByIdAndUpdate(
       orderId,
-      { isCompleted: true },
+      {
+        orderStatus: orderStatus || "DELIVERED",
+        isCompleted: orderStatus === "DELIVERED",
+      },
       { new: true }
     );
 
