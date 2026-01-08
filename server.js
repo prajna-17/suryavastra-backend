@@ -20,6 +20,7 @@ app.use(
       "Authorization",
       "x-uploadthing-package",
       "x-uploadthing-version",
+      "x-uploadthing-signature",
     ],
   })
 );
