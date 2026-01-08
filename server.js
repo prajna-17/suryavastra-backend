@@ -15,13 +15,7 @@ app.use(
     origin: true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "x-uploadthing-package",
-      "x-uploadthing-version",
-      "x-uploadthing-signature",
-    ],
+    allowedHeaders: "*",
   })
 );
 
