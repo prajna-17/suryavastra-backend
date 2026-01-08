@@ -19,6 +19,14 @@ app.use(
   })
 );
 
+// 🔥 Manually handle preflight (Node 22 safe)
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 app.use(
   "/api/uploadthing",
   createRouteHandler({
@@ -27,7 +35,6 @@ app.use(
 );
 
 // 🔥 Explicitly handle preflight requests
-app.options("/*", cors());
 
 app.use(express.json());
 
