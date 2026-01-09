@@ -286,6 +286,43 @@ const createCODOrder = async (req, res) => {
   }
 };
 
+// CANCEL ORDER (CUSTOMER)
+const cancelOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.userId;
+
+    const order = await Order.findOne({
+      _id: orderId,
+      user: userId,
+    });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (order.orderStatus !== "PLACED") {
+      return res.status(400).json({ message: "Order cannot be cancelled now" });
+    }
+
+    order.orderStatus = "CANCELLED";
+    order.isCompleted = false;
+
+    if (order.paymentMethod === "ONLINE") {
+      order.paymentStatus = "FAILED";
+    }
+
+    await order.save();
+
+    return res.status(200).json({
+      message: "Order cancelled successfully",
+      data: order,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   createOrder,
   createPendingOrder,
@@ -294,4 +331,5 @@ module.exports = {
   fetchUserAllOrders,
   orderCompleted,
   createCODOrder,
+  cancelOrder,
 };

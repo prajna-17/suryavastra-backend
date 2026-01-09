@@ -20,7 +20,13 @@ const createProduct = async (req, res) => {
 // GET ALL PRODUCTS
 const getProducts = async (req, res) => {
   try {
-    const products = await Product.find().populate("category");
+    console.log("🔥 FILTER CATEGORY:", req.query.category);
+
+    const { category } = req.query;
+
+    const filter = category ? { category } : {};
+
+    const products = await Product.find(filter).populate("category");
     res.json(products);
   } catch (error) {
     res.status(500).json({ message: error.message });
