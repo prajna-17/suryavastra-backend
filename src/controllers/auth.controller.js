@@ -3,7 +3,10 @@ const User = require("../models/user.model");
 const { createResponse, ErrorResponse } = require("../utils/responseWrapper");
 const jwt = require("jsonwebtoken");
 const sendOtpEmail = require("../utils/sendEmail");
-
+const { OAuth2Client } = require("google-auth-library");
+const client = new OAuth2Client(
+  "834894232655-0vg43pr9shvi21kia3vuighti8ifajg0.apps.googleusercontent.com",
+);
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -124,7 +127,7 @@ const verifyOtp = async (req, res) => {
         role: user.role,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "7d" },
     );
 
     return res.status(200).json({
@@ -143,4 +146,53 @@ const verifyOtp = async (req, res) => {
   }
 };
 
-module.exports = { register, login, sendOtp, verifyOtp };
+const googleAuth = async (req, res) => {
+  try {
+    const { credential } = req.body;
+
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience:
+        "834894232655-0vg43pr9shvi21kia3vuighti8ifajg0.apps.googleusercontent.com",
+    });
+
+    const payload = ticket.getPayload();
+
+    const email = payload.email;
+    const name = payload.name;
+
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      user = await User.create({
+        email,
+        name,
+        isVerified: true,
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" },
+    );
+
+    return res.status(200).json({
+      token,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+  } catch (err) {
+    console.error("GOOGLE ERROR:", err);
+    return res.status(400).json({
+      status: "error",
+      message: "Google authentication failed",
+    });
+  }
+};
+
+module.exports = { register, login, sendOtp, verifyOtp, googleAuth };
