@@ -62,7 +62,7 @@ const createOrder = async (req, res) => {
 
     const savedOrder = await Order.findById(newOrder._id).populate(
       "products.product",
-      "title images"
+      "title images",
     );
 
     res
@@ -121,6 +121,7 @@ const createPendingOrder = async (req, res) => {
       products: orderItems,
       shippingAddress,
       totalAmount,
+      paymentMethod: "ONLINE",
       paymentStatus: "PENDING",
       isCompleted: false,
       merchantTransactionId,
@@ -136,8 +137,8 @@ const createPendingOrder = async (req, res) => {
           amount: totalAmount,
           merchantTransactionId,
         },
-        "Pending order created"
-      )
+        "Pending order created",
+      ),
     );
   } catch (error) {
     res.status(500).json(ErrorResponse(500, error.message));
@@ -211,7 +212,7 @@ const orderCompleted = async (req, res) => {
         orderStatus: orderStatus || "DELIVERED",
         isCompleted: orderStatus === "DELIVERED",
       },
-      { new: true }
+      { new: true },
     );
 
     if (!updatedOrder) {

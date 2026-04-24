@@ -16,7 +16,7 @@ const orderProductSchema = new mongoose.Schema(
     },
     subtotal: Number,
   },
-  { _id: false }
+  { _id: false },
 );
 
 const shippingSchema = new mongoose.Schema(
@@ -47,7 +47,7 @@ const shippingSchema = new mongoose.Schema(
       required: true,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const orderSchema = new mongoose.Schema(
@@ -76,6 +76,22 @@ const orderSchema = new mongoose.Schema(
       type: String,
     },
 
+    razorpayOrderId: {
+      type: String,
+    },
+
+    razorpayPaymentId: {
+      type: String,
+    },
+
+    razorpaySignature: {
+      type: String,
+    },
+
+    paidAt: {
+      type: Date,
+    },
+
     paymentStatus: {
       type: String,
       enum: ["PENDING", "PAID", "FAILED"],
@@ -98,7 +114,7 @@ const orderSchema = new mongoose.Schema(
       default: "PLACED",
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("Order", orderSchema);

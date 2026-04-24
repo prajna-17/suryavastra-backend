@@ -195,4 +195,42 @@ const googleAuth = async (req, res) => {
   }
 };
 
-module.exports = { register, login, sendOtp, verifyOtp, googleAuth };
+const getCurrentUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select(
+      "name email role isVerified",
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        status: "error",
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      status: "success",
+      data: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+    });
+  }
+};
+
+module.exports = {
+  register,
+  login,
+  sendOtp,
+  verifyOtp,
+  googleAuth,
+  getCurrentUser,
+};
