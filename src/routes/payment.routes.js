@@ -21,17 +21,35 @@ function getBaseCandidates(rawBaseUrl) {
   return [...new Set(candidates.filter(Boolean))];
 }
 
-async function postPayWithFallback(baseUrl, body, headers) {
+async function postPayWithFallback(baseUrl, payloadBase64, saltKey, saltIndex) {
   const candidates = getBaseCandidates(baseUrl);
+  const payPaths = ["/pg/v1/pay", "/v1/pay"];
   let lastError;
 
   for (const candidate of candidates) {
-    try {
-      return await axios.post(`${candidate}/pg/v1/pay`, body, { headers });
-    } catch (error) {
-      lastError = error;
-      if (error?.response?.status !== 404) {
-        throw error;
+    for (const payPath of payPaths) {
+      const stringToSign = `${payloadBase64}${payPath}${saltKey}`;
+      const checksum =
+        crypto.createHash("sha256").update(stringToSign).digest("hex") +
+        "###" +
+        saltIndex;
+
+      try {
+        return await axios.post(
+          `${candidate}${payPath}`,
+          { request: payloadBase64 },
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "X-VERIFY": checksum,
+            },
+          },
+        );
+      } catch (error) {
+        lastError = error;
+        if (error?.response?.status !== 404) {
+          throw error;
+        }
       }
     }
   }
@@ -43,21 +61,35 @@ async function getStatusWithFallback(
   baseUrl,
   merchantId,
   merchantTransactionId,
-  headers,
+  saltKey,
+  saltIndex,
 ) {
   const candidates = getBaseCandidates(baseUrl);
+  const statusPrefixes = ["/pg/v1/status", "/v1/status"];
   let lastError;
 
   for (const candidate of candidates) {
-    try {
-      return await axios.get(
-        `${candidate}/pg/v1/status/${merchantId}/${merchantTransactionId}`,
-        { headers },
-      );
-    } catch (error) {
-      lastError = error;
-      if (error?.response?.status !== 404) {
-        throw error;
+    for (const statusPrefix of statusPrefixes) {
+      const statusPath = `${statusPrefix}/${merchantId}/${merchantTransactionId}`;
+      const stringToSign = `${statusPath}${saltKey}`;
+      const checksum =
+        crypto.createHash("sha256").update(stringToSign).digest("hex") +
+        "###" +
+        saltIndex;
+
+      try {
+        return await axios.get(`${candidate}${statusPath}`, {
+          headers: {
+            "Content-Type": "application/json",
+            "X-VERIFY": checksum,
+            "X-MERCHANT-ID": merchantId,
+          },
+        });
+      } catch (error) {
+        lastError = error;
+        if (error?.response?.status !== 404) {
+          throw error;
+        }
       }
     }
   }
@@ -151,19 +183,12 @@ router.post("/initiate", requireAuth, async (req, res) => {
     const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString(
       "base64",
     );
-    const stringToSign = `${payloadBase64}/pg/v1/pay${saltKey}`;
-    const checksum =
-      crypto.createHash("sha256").update(stringToSign).digest("hex") +
-      "###" +
-      saltIndex;
 
     const response = await postPayWithFallback(
       process.env.PHONEPE_BASE_URL,
-      { request: payloadBase64 },
-      {
-        "Content-Type": "application/json",
-        "X-VERIFY": checksum,
-      },
+      payloadBase64,
+      saltKey,
+      saltIndex,
     );
 
     const redirectUrl =
@@ -240,21 +265,12 @@ router.post("/verify", requireAuth, async (req, res) => {
     const saltKey = process.env.PHONEPE_SALT_KEY;
     const saltIndex = process.env.PHONEPE_SALT_INDEX;
 
-    const stringToSign = `/pg/v1/status/${merchantId}/${merchantTransactionId}${saltKey}`;
-    const checksum =
-      crypto.createHash("sha256").update(stringToSign).digest("hex") +
-      "###" +
-      saltIndex;
-
     const response = await getStatusWithFallback(
       process.env.PHONEPE_BASE_URL,
       merchantId,
       merchantTransactionId,
-      {
-        "Content-Type": "application/json",
-        "X-VERIFY": checksum,
-        "X-MERCHANT-ID": merchantId,
-      },
+      saltKey,
+      saltIndex,
     );
 
     const statusData = response?.data || {};
