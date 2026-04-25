@@ -71,7 +71,9 @@ router.post("/initiate", requireAuth, async (req, res) => {
     dbOrder.paymentMethod = "ONLINE";
     await dbOrder.save();
 
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const frontendUrl = (
+      process.env.FRONTEND_URL || "http://localhost:3000"
+    ).replace(/\/$/, "");
 
     const payload = {
       merchantId,
@@ -109,6 +111,15 @@ router.post("/initiate", requireAuth, async (req, res) => {
     const redirectUrl =
       response?.data?.data?.instrumentResponse?.redirectInfo?.url || null;
 
+    if (!redirectUrl) {
+      return res.status(400).json({
+        success: false,
+        message:
+          response?.data?.message || "PhonePe did not return redirect url",
+        code: response?.data?.code || "PHONEPE_REDIRECT_MISSING",
+      });
+    }
+
     res.json({
       success: true,
       data: {
@@ -118,10 +129,13 @@ router.post("/initiate", requireAuth, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("PhonePe Initiate Error:", error?.response?.data || error);
+    const providerError = error?.response?.data || null;
+    console.error("PhonePe Initiate Error:", providerError || error);
+
     res.status(500).json({
       success: false,
-      message: "Payment initiation failed",
+      message: providerError?.message || "Payment initiation failed",
+      code: providerError?.code || "PHONEPE_INITIATE_ERROR",
     });
   }
 });
