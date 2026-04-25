@@ -5,6 +5,66 @@ const crypto = require("crypto");
 const Order = require("../models/order.model");
 const { requireAuth } = require("../middlewares/auth.middleware");
 
+function getBaseCandidates(rawBaseUrl) {
+  const base = String(rawBaseUrl || "").replace(/\/$/, "");
+  const candidates = [base];
+
+  if (base.includes("/apis/hermes")) {
+    candidates.push(base.replace("/apis/hermes", "/apis/pg"));
+    candidates.push(base.replace("/apis/hermes", "/apis"));
+  }
+
+  if (base.includes("/apis/pg")) {
+    candidates.push(base.replace("/apis/pg", "/apis/hermes"));
+  }
+
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+async function postPayWithFallback(baseUrl, body, headers) {
+  const candidates = getBaseCandidates(baseUrl);
+  let lastError;
+
+  for (const candidate of candidates) {
+    try {
+      return await axios.post(`${candidate}/pg/v1/pay`, body, { headers });
+    } catch (error) {
+      lastError = error;
+      if (error?.response?.status !== 404) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+async function getStatusWithFallback(
+  baseUrl,
+  merchantId,
+  merchantTransactionId,
+  headers,
+) {
+  const candidates = getBaseCandidates(baseUrl);
+  let lastError;
+
+  for (const candidate of candidates) {
+    try {
+      return await axios.get(
+        `${candidate}/pg/v1/status/${merchantId}/${merchantTransactionId}`,
+        { headers },
+      );
+    } catch (error) {
+      lastError = error;
+      if (error?.response?.status !== 404) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 router.post("/initiate", requireAuth, async (req, res) => {
   try {
     const { orderId } = req.body;
@@ -97,14 +157,12 @@ router.post("/initiate", requireAuth, async (req, res) => {
       "###" +
       saltIndex;
 
-    const response = await axios.post(
-      `${process.env.PHONEPE_BASE_URL}/pg/v1/pay`,
+    const response = await postPayWithFallback(
+      process.env.PHONEPE_BASE_URL,
       { request: payloadBase64 },
       {
-        headers: {
-          "Content-Type": "application/json",
-          "X-VERIFY": checksum,
-        },
+        "Content-Type": "application/json",
+        "X-VERIFY": checksum,
       },
     );
 
@@ -136,6 +194,10 @@ router.post("/initiate", requireAuth, async (req, res) => {
       success: false,
       message: providerError?.message || "Payment initiation failed",
       code: providerError?.code || "PHONEPE_INITIATE_ERROR",
+      hint:
+        providerError?.code === "404"
+          ? "PhonePe base URL may be incorrect for your account mode. Check PHONEPE_BASE_URL in deployed env."
+          : undefined,
     });
   }
 });
@@ -184,14 +246,14 @@ router.post("/verify", requireAuth, async (req, res) => {
       "###" +
       saltIndex;
 
-    const response = await axios.get(
-      `${process.env.PHONEPE_BASE_URL}/pg/v1/status/${merchantId}/${merchantTransactionId}`,
+    const response = await getStatusWithFallback(
+      process.env.PHONEPE_BASE_URL,
+      merchantId,
+      merchantTransactionId,
       {
-        headers: {
-          "Content-Type": "application/json",
-          "X-VERIFY": checksum,
-          "X-MERCHANT-ID": merchantId,
-        },
+        "Content-Type": "application/json",
+        "X-VERIFY": checksum,
+        "X-MERCHANT-ID": merchantId,
       },
     );
 
