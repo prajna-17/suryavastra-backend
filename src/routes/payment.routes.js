@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
-const crypto = require("crypto");
 const Order = require("../models/order.model");
 const { requireAuth } = require("../middlewares/auth.middleware");
 
@@ -10,67 +9,19 @@ let phonePeAuthTokenCache = {
   expiresAtEpochMs: 0,
 };
 
-function getBaseCandidates(rawBaseUrl) {
-  const base = String(rawBaseUrl || "").replace(/\/$/, "");
-  const candidates = [base];
-
-  if (base.includes("/apis/hermes")) {
-    candidates.push(base.replace("/apis/hermes", "/apis"));
-    candidates.push(base.replace("/apis/hermes", "/apis/pg"));
-  }
-
-  if (base.includes("/apis/pg")) {
-    candidates.push(base.replace("/apis/pg", "/apis"));
-    candidates.push(base.replace("/apis/pg", "/apis/hermes"));
-  }
-
-  if (base.includes("/apis")) {
-    const origin = base.replace(/\/apis(?:\/.*)?$/, "");
-    if (origin && origin !== base) {
-      candidates.push(`${origin}/apis`);
-      candidates.push(`${origin}/apis/pg`);
-      candidates.push(`${origin}/apis/hermes`);
-    }
-  }
-
-  return [...new Set(candidates.filter(Boolean))];
-}
-
-function getPhonePeMode() {
-  if (
-    process.env.PHONEPE_CLIENT_ID &&
-    process.env.PHONEPE_CLIENT_SECRET &&
-    process.env.PHONEPE_CLIENT_VERSION
-  ) {
-    return "STANDARD_CHECKOUT_V2";
-  }
-
-  return "LEGACY";
-}
-
 function getPhonePeBaseUrl() {
-  const rawBaseUrl = String(process.env.PHONEPE_BASE_URL || "").trim();
-
-  if (rawBaseUrl) {
-    return rawBaseUrl.replace(/\/$/, "");
-  }
-
-  if (getPhonePeMode() === "STANDARD_CHECKOUT_V2") {
-    return "https://api.phonepe.com/apis/pg";
-  }
-
-  return "https://api.phonepe.com/apis/hermes";
+  return String(
+    process.env.PHONEPE_BASE_URL || "https://api.phonepe.com/apis/pg",
+  ).replace(/\/$/, "");
 }
 
-function getPhonePeLegacyEnvValidation() {
-  return (
-    process.env.PHONEPE_MERCHANT_ID &&
-    process.env.PHONEPE_SALT_KEY &&
-    process.env.PHONEPE_SALT_INDEX
-  );
+function getPhonePeTokenUrl() {
+  return String(
+    process.env.PHONEPE_AUTH_URL || `${getPhonePeBaseUrl()}/v1/oauth/token`,
+  ).replace(/\/$/, "");
 }
 
-function getPhonePeV2EnvValidation() {
+function hasRequiredPhonePeEnv() {
   return (
     process.env.PHONEPE_CLIENT_ID &&
     process.env.PHONEPE_CLIENT_SECRET &&
@@ -78,34 +29,26 @@ function getPhonePeV2EnvValidation() {
   );
 }
 
-function buildMerchantTransactionId(orderId) {
+function buildMerchantOrderId(orderId) {
   const safeOrderId = String(orderId || "")
     .replace(/[^a-zA-Z0-9_-]/g, "")
-    .slice(-12);
+    .slice(-20);
 
-  return `TXN_${safeOrderId}_${Date.now()}`.slice(0, 63);
+  return `SV_${safeOrderId}_${Date.now()}`.slice(0, 63);
 }
 
-function shouldRetryPhonePeRequest(error) {
-  const status = error?.response?.status;
-  const providerCode = String(error?.response?.data?.code || "");
-  const providerMessage = String(
-    error?.response?.data?.message || "",
-  ).toLowerCase();
+function normalizePhoneNumber(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
 
-  if (status === 404) {
-    return true;
+  if (!digits) {
+    return undefined;
   }
 
-  if (providerMessage.includes("api mapping not found")) {
-    return true;
+  if (digits.length === 10) {
+    return digits;
   }
 
-  if (providerCode === "404") {
-    return true;
-  }
-
-  return false;
+  return digits.slice(-10);
 }
 
 async function getPhonePeAccessToken() {
@@ -118,22 +61,20 @@ async function getPhonePeAccessToken() {
     return phonePeAuthTokenCache.accessToken;
   }
 
-  const tokenUrl =
-    process.env.PHONEPE_AUTH_URL ||
-    "https://api.phonepe.com/apis/identity-manager/v1/oauth/token";
-
-  const params = new URLSearchParams({
-    client_id: process.env.PHONEPE_CLIENT_ID,
-    client_version: process.env.PHONEPE_CLIENT_VERSION,
-    client_secret: process.env.PHONEPE_CLIENT_SECRET,
-    grant_type: "client_credentials",
-  });
-
-  const response = await axios.post(tokenUrl, params.toString(), {
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+  const response = await axios.post(
+    getPhonePeTokenUrl(),
+    new URLSearchParams({
+      client_id: process.env.PHONEPE_CLIENT_ID,
+      client_version: process.env.PHONEPE_CLIENT_VERSION,
+      client_secret: process.env.PHONEPE_CLIENT_SECRET,
+      grant_type: "client_credentials",
+    }).toString(),
+    {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
     },
-  });
+  );
 
   const accessToken = response?.data?.access_token;
   const expiresAtSeconds = Number(response?.data?.expires_at || 0);
@@ -151,48 +92,10 @@ async function getPhonePeAccessToken() {
   return accessToken;
 }
 
-async function postPayWithFallback(baseUrl, payloadBase64, saltKey, saltIndex) {
-  const candidates = getBaseCandidates(baseUrl);
-  const payPaths = ["/pg/v1/pay", "/v1/pay"];
-  let lastError;
-
-  for (const candidate of candidates) {
-    for (const payPath of payPaths) {
-      const stringToSign = `${payloadBase64}${payPath}${saltKey}`;
-      const checksum =
-        crypto.createHash("sha256").update(stringToSign).digest("hex") +
-        "###" +
-        saltIndex;
-
-      try {
-        return await axios.post(
-          `${candidate}${payPath}`,
-          { request: payloadBase64 },
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "X-VERIFY": checksum,
-            },
-          },
-        );
-      } catch (error) {
-        lastError = error;
-        if (!shouldRetryPhonePeRequest(error)) {
-          throw error;
-        }
-      }
-    }
-  }
-
-  throw lastError;
-}
-
-async function createStandardCheckoutPayment(payload) {
-  const baseUrl = getPhonePeBaseUrl();
+async function createPhonePePayment(payload) {
   const accessToken = await getPhonePeAccessToken();
-  const endpoint = `${baseUrl}/checkout/v2/pay`;
 
-  return axios.post(endpoint, payload, {
+  return axios.post(`${getPhonePeBaseUrl()}/checkout/v2/pay`, payload, {
     headers: {
       "Content-Type": "application/json",
       Authorization: `O-Bearer ${accessToken}`,
@@ -200,61 +103,22 @@ async function createStandardCheckoutPayment(payload) {
   });
 }
 
-async function getStatusWithFallback(
-  baseUrl,
-  merchantId,
-  merchantTransactionId,
-  saltKey,
-  saltIndex,
-) {
-  const candidates = getBaseCandidates(baseUrl);
-  const statusPrefixes = ["/pg/v1/status", "/v1/status"];
-  let lastError;
-
-  for (const candidate of candidates) {
-    for (const statusPrefix of statusPrefixes) {
-      const statusPath = `${statusPrefix}/${merchantId}/${merchantTransactionId}`;
-      const stringToSign = `${statusPath}${saltKey}`;
-      const checksum =
-        crypto.createHash("sha256").update(stringToSign).digest("hex") +
-        "###" +
-        saltIndex;
-
-      try {
-        return await axios.get(`${candidate}${statusPath}`, {
-          headers: {
-            "Content-Type": "application/json",
-            "X-VERIFY": checksum,
-            "X-MERCHANT-ID": merchantId,
-          },
-        });
-      } catch (error) {
-        lastError = error;
-        if (!shouldRetryPhonePeRequest(error)) {
-          throw error;
-        }
-      }
-    }
-  }
-
-  throw lastError;
-}
-
-async function getStandardCheckoutStatus(merchantOrderId) {
-  const baseUrl = getPhonePeBaseUrl();
+async function getPhonePeOrderStatus(merchantOrderId) {
   const accessToken = await getPhonePeAccessToken();
-  const endpoint = `${baseUrl}/checkout/v2/order/${merchantOrderId}/status`;
 
-  return axios.get(endpoint, {
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `O-Bearer ${accessToken}`,
+  return axios.get(
+    `${getPhonePeBaseUrl()}/checkout/v2/order/${merchantOrderId}/status`,
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `O-Bearer ${accessToken}`,
+      },
+      params: {
+        details: false,
+        errorContext: true,
+      },
     },
-    params: {
-      details: false,
-      errorContext: true,
-    },
-  });
+  );
 }
 
 router.post("/initiate", requireAuth, async (req, res) => {
@@ -265,6 +129,13 @@ router.post("/initiate", requireAuth, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "orderId is required",
+      });
+    }
+
+    if (!hasRequiredPhonePeEnv()) {
+      return res.status(500).json({
+        success: false,
+        message: "PhonePe v2 env vars are missing",
       });
     }
 
@@ -291,22 +162,6 @@ router.post("/initiate", requireAuth, async (req, res) => {
       });
     }
 
-    const phonePeMode = getPhonePeMode();
-
-    if (
-      (phonePeMode === "STANDARD_CHECKOUT_V2" &&
-        !getPhonePeV2EnvValidation()) ||
-      (phonePeMode === "LEGACY" && !getPhonePeLegacyEnvValidation())
-    ) {
-      return res.status(500).json({
-        success: false,
-        message:
-          phonePeMode === "STANDARD_CHECKOUT_V2"
-            ? "PhonePe v2 env vars are missing"
-            : "PhonePe legacy env vars are missing",
-      });
-    }
-
     const amountInPaise = Math.round(Number(dbOrder.totalAmount) * 100);
 
     if (!amountInPaise || amountInPaise <= 0) {
@@ -316,10 +171,10 @@ router.post("/initiate", requireAuth, async (req, res) => {
       });
     }
 
-    const merchantTransactionId =
-      dbOrder.merchantTransactionId || buildMerchantTransactionId(dbOrder._id);
+    const merchantOrderId =
+      dbOrder.merchantTransactionId || buildMerchantOrderId(dbOrder._id);
 
-    dbOrder.merchantTransactionId = merchantTransactionId;
+    dbOrder.merchantTransactionId = merchantOrderId;
     dbOrder.paymentMethod = "ONLINE";
     await dbOrder.save();
 
@@ -327,63 +182,32 @@ router.post("/initiate", requireAuth, async (req, res) => {
       process.env.FRONTEND_URL || "http://localhost:3000"
     ).replace(/\/$/, "");
 
-    const redirectUrlBase = `${frontendUrl}/payment-success?orderId=${dbOrder._id}&merchantTransactionId=${merchantTransactionId}`;
-    let redirectUrl = null;
-
-    if (phonePeMode === "STANDARD_CHECKOUT_V2") {
-      const v2Payload = {
-        merchantOrderId: merchantTransactionId,
-        amount: amountInPaise,
-        expireAfter: 1200,
-        paymentFlow: {
-          type: "PG_CHECKOUT",
-          message: `Payment for order ${dbOrder._id}`,
-          merchantUrls: {
-            redirectUrl: redirectUrlBase,
-          },
+    const redirectUrlBase = `${frontendUrl}/payment-success?orderId=${dbOrder._id}&merchantTransactionId=${merchantOrderId}`;
+    const paymentPayload = {
+      merchantOrderId,
+      amount: amountInPaise,
+      expireAfter: 1200,
+      metaInfo: {
+        udf1: String(dbOrder._id),
+      },
+      paymentFlow: {
+        type: "PG_CHECKOUT",
+        message: `Payment for order ${dbOrder._id}`,
+        merchantUrls: {
+          redirectUrl: redirectUrlBase,
         },
-        ...(dbOrder?.shippingAddress?.phone
-          ? {
-              prefillUserLoginDetails: {
-                phoneNumber: dbOrder.shippingAddress.phone,
-              },
-            }
-          : {}),
-      };
+      },
+      ...(normalizePhoneNumber(dbOrder?.shippingAddress?.phone)
+        ? {
+            prefillUserLoginDetails: {
+              phoneNumber: normalizePhoneNumber(dbOrder.shippingAddress.phone),
+            },
+          }
+        : {}),
+    };
 
-      const response = await createStandardCheckoutPayment(v2Payload);
-      redirectUrl = response?.data?.redirectUrl || null;
-    } else {
-      const legacyPayload = {
-        merchantId: process.env.PHONEPE_MERCHANT_ID,
-        merchantTransactionId,
-        merchantUserId: String(dbOrder.user),
-        amount: amountInPaise,
-        redirectUrl: redirectUrlBase,
-        redirectMode: "REDIRECT",
-        callbackUrl: process.env.PHONEPE_CALLBACK_URL,
-        ...(dbOrder?.shippingAddress?.phone
-          ? { mobileNumber: dbOrder.shippingAddress.phone }
-          : {}),
-        paymentInstrument: {
-          type: "PAY_PAGE",
-        },
-      };
-
-      const payloadBase64 = Buffer.from(JSON.stringify(legacyPayload)).toString(
-        "base64",
-      );
-
-      const response = await postPayWithFallback(
-        getPhonePeBaseUrl(),
-        payloadBase64,
-        process.env.PHONEPE_SALT_KEY,
-        process.env.PHONEPE_SALT_INDEX,
-      );
-
-      redirectUrl =
-        response?.data?.data?.instrumentResponse?.redirectInfo?.url || null;
-    }
+    const response = await createPhonePePayment(paymentPayload);
+    const redirectUrl = response?.data?.redirectUrl || null;
 
     if (!redirectUrl) {
       return res.status(400).json({
@@ -397,7 +221,7 @@ router.post("/initiate", requireAuth, async (req, res) => {
       success: true,
       data: {
         orderId: String(dbOrder._id),
-        merchantTransactionId,
+        merchantTransactionId: merchantOrderId,
         redirectUrl,
       },
     });
@@ -410,12 +234,10 @@ router.post("/initiate", requireAuth, async (req, res) => {
       message: providerError?.message || "Payment initiation failed",
       code: providerError?.code || "PHONEPE_INITIATE_ERROR",
       hint:
-        providerError?.code === "404" ||
-        String(providerError?.message || "").includes("Api Mapping Not Found")
-          ? "PhonePe endpoint mapping looks wrong for the current merchant mode. Check deployed PHONEPE_BASE_URL and merchant onboarding mode."
-          : providerError?.code === "AUTHORIZATION_FAILED" ||
-              error?.response?.status === 401
-            ? "PhonePe authorization failed. Verify whether this merchant should use legacy salt credentials or v2 client credentials."
+        error?.response?.status === 401
+          ? "PhonePe authorization failed. Check PHONEPE_CLIENT_ID, PHONEPE_CLIENT_VERSION and PHONEPE_CLIENT_SECRET in deployed env."
+          : error?.response?.status === 404
+            ? "PhonePe endpoint not found. Check PHONEPE_BASE_URL and PHONEPE_AUTH_URL in deployed env."
             : undefined,
     });
   }
@@ -429,6 +251,13 @@ router.post("/verify", requireAuth, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "orderId and merchantTransactionId are required",
+      });
+    }
+
+    if (!hasRequiredPhonePeEnv()) {
+      return res.status(500).json({
+        success: false,
+        message: "PhonePe v2 env vars are missing",
       });
     }
 
@@ -455,34 +284,11 @@ router.post("/verify", requireAuth, async (req, res) => {
       });
     }
 
-    const phonePeMode = getPhonePeMode();
-    let statusData = {};
-    let txnState = null;
-    let isPaid = false;
-    let isFailed = false;
-
-    if (phonePeMode === "STANDARD_CHECKOUT_V2") {
-      const response = await getStandardCheckoutStatus(merchantTransactionId);
-      statusData = response?.data || {};
-      txnState = statusData?.state || null;
-      isPaid = txnState === "COMPLETED";
-      isFailed = txnState === "FAILED";
-    } else {
-      const response = await getStatusWithFallback(
-        getPhonePeBaseUrl(),
-        process.env.PHONEPE_MERCHANT_ID,
-        merchantTransactionId,
-        process.env.PHONEPE_SALT_KEY,
-        process.env.PHONEPE_SALT_INDEX,
-      );
-
-      statusData = response?.data || {};
-      txnState = statusData?.data?.state;
-      isPaid =
-        statusData?.success === true &&
-        (txnState === "COMPLETED" || statusData?.code === "PAYMENT_SUCCESS");
-      isFailed = txnState === "FAILED";
-    }
+    const response = await getPhonePeOrderStatus(merchantTransactionId);
+    const statusData = response?.data || {};
+    const txnState = statusData?.state || null;
+    const isPaid = txnState === "COMPLETED";
+    const isFailed = txnState === "FAILED";
 
     if (isPaid) {
       dbOrder.paymentStatus = "PAID";
@@ -526,14 +332,8 @@ router.post("/verify", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/callback", async (req, res) => {
-  try {
-    // Keep callback endpoint available for PhonePe server callbacks.
-    return res.status(200).send("OK");
-  } catch (error) {
-    console.error("PhonePe Callback Error:", error);
-    return res.status(500).send("ERROR");
-  }
+router.post("/callback", async (_req, res) => {
+  return res.status(200).send("OK");
 });
 
 module.exports = router;
